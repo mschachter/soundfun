@@ -81,14 +81,16 @@ def example5():
     desired_freq = 440.0
 
     num_spikes_needed = desired_freq*duration
-    model_freq = 3.0 # the FitzHugh-Nagumo neuron spikes at about 3Hz
+    model_freq = 3.0 / 100.0 # the FitzHugh-Nagumo neuron spikes at about 3 spikes per 100s
     fg = FitzHughNagumo(dc_current=0.5)
     fg_duration = num_spikes_needed / model_freq
-    print 'Running FitzHugh-Nagumo model for %0.0f seconds...' % fg_duration
+    #print 'Running FitzHugh-Nagumo model for %0.0f seconds...' % fg_duration
     step_size = fg_duration / nsamps_needed
-    print 'step size=%f' % step_size
+    #print 'step size=%f' % step_size
+
     nsteps = int(fg_duration / step_size)
-    print 'nsteps=%d' % nsteps
+    #print 'nsteps=%d' % nsteps
+
     base_wave = []
     for k in range(nsteps):
         state = fg.step(step_size)
@@ -97,9 +99,11 @@ def example5():
 
     base_wave = np.array(base_wave)
 
+    """
     t = np.arange(0.0, fg_duration, step_size)
     plt.plot(t, base_wave, 'k-')
     plt.title('FitzHugh-Nagumo Neuron')
+    """
 
     soundwave = np.array(base_wave)
 
