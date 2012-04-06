@@ -77,10 +77,29 @@ def example5():
 
     duration = 3.0
     sample_rate = 44100
-    nsamps_needed = int(duration * sample_rate)
-    desired_freq = 440.0
 
-    num_spikes_needed = desired_freq*duration
+    soundwave_440 = fitzhugh_nagumo_wave(440.0, duration, sample_rate)
+    soundwave_880 = fitzhugh_nagumo_wave(880.0, duration, sample_rate)
+    soundwave_1000 = fitzhugh_nagumo_wave(880.0, duration, sample_rate)
+    #soundwave_1760 = fitzhugh_nagumo_wave(1760, duration, sample_rate)
+    #soundwave = soundwave_440 + soundwave_880 + soundwave_1760
+
+    soundwave = soundwave_440 + soundwave_880
+
+
+    filename = '/tmp/wavfile_example5.wav'
+    wavfile = WavFile()
+    wavfile.data = soundwave
+    wavfile.to_wav(filename)
+
+    play_sound(filename)
+
+
+def fitzhugh_nagumo_wave(freq, duration, sample_rate):
+
+    nsamps_needed = int(duration * sample_rate)
+
+    num_spikes_needed = freq*duration
     model_freq = 3.0 / 100.0 # the FitzHugh-Nagumo neuron spikes at about 3 spikes per 100s
     fg = FitzHughNagumo(dc_current=0.5)
     fg_duration = num_spikes_needed / model_freq
@@ -99,18 +118,4 @@ def example5():
 
     base_wave = np.array(base_wave)
 
-    """
-    t = np.arange(0.0, fg_duration, step_size)
-    plt.plot(t, base_wave, 'k-')
-    plt.title('FitzHugh-Nagumo Neuron')
-    """
-
-    soundwave = np.array(base_wave)
-
-    filename = '/tmp/wavfile_example5.wav'
-    wavfile = WavFile()
-    wavfile.data = soundwave
-    wavfile.to_wav(filename)
-
-    play_sound(filename)
-
+    return base_wave
