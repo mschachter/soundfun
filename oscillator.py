@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import operator
 
 
 class FitzHughNagumo(object):
@@ -49,68 +50,143 @@ class LF(object):
     def set_default_params(self):
         self.configure_params(T_0=9.0, E_e=750.0, R_g=1.0, R_k=0.40, R_a=0.05)
 
-    def find_alpha_and_E_0(self, T_p, T_e, E_e):
+    def find_alpha_and_E_0(self, params):
+
+        T_e = params['T_e']
+        T_a = params['T_a']
+        T_c = params['T_c']
+        T_p = params['T_p']
+        wg = params['wg']
+        E_e = params['E_e']
+        eps = params['eps']
 
         step_size = 0.05 #in ms
-        wg = np.pi / T_p # T_p in ms
+        t1 = np.arange(0.0, T_e+step_size, step_size)
+        t2 = np.arange(T_e+step_size, T_c+step_size, step_size)
 
         #start with low alpha and E_0
         alphas = np.arange(0.01, 0.5, 0.001)
-        E_0s = np.arange(100.0, 500.0, 1.0)
+        E_0s = np.arange(50.0, 750.0, 1.0)
 
-        best_params = (None, None) #(alpha, E_0)
-        best_Ediff = np.Inf
-
+        all_vals = []
         for alpha in alphas:
             for E_0 in E_0s:
-                #E = E_0*np.exp(alpha*t)*np.sin(wg*t)
-                E_e_val = E_0*np.exp(alpha*T_e)*np.sin(wg*T_e)
-                Ediff = np.abs(E_e + E_e_val) #E_e_val should be negative
-                if E_e_val < 0.0 and Ediff < best_Ediff:
-                    best_Ediff = Ediff
-                    best_params = (alpha, E_0)
+                E1 = self.E1(E_0, alpha, wg, t1)
+                E_e_val = float(E1[-1])
+                E1area = E1.sum()*step_size
 
-        #print 'T_p=%f, E_e=%f, T_e=%f, Ediff=%f' % (T_p, E_e, T_e, best_Ediff)
+                E2 = self.E2(E_e, T_a, T_e, T_c, eps, t2)
+                E2area = E2.sum()*step_size
+
+                Ediff = np.abs(E_e + E_e_val) #E_e_val should be negative
+                adiff = np.abs(E1area + E2area)
+                all_vals.append( (alpha, E_0, Ediff, adiff, E1area, E2area) )
+
+        all_vals.sort(key=operator.itemgetter(3))
+        all_vals.sort(key=operator.itemgetter(2))
+        for k in range(20):
+            print all_vals[k]
+
+        best_params = (all_vals[0][0], all_vals[0][1])
+
         return best_params
 
+    def find_alpha_and_E_0_and_T_a(self, params):
 
-    def enforce_area_balance(self, params):
         T_e = params['T_e']
+        T_c = params['T_c']
+        T_p = params['T_p']
         T_a = params['T_a']
         wg = params['wg']
         E_e = params['E_e']
-        alpha = params['alpha']
-        E_0 = params['E_0']
+        eps = params['eps']
 
-        #find fixed area up to T_e
         step_size = 0.05 #in ms
-        t = np.arange(0.0, T_e, step_size)
-        E1 = E_0*np.exp(alpha*t)*np.sin(wg*t)
-        E1_area = E1.sum()*step_size
-        #print 'E1_area=%f' % E1_area
+        t1 = np.arange(0.0, T_e+step_size, step_size)
+        t2 = np.arange(T_e+step_size, T_c+step_size, step_size)
 
-        #find T_c such that second half that is equal to -E_area
-        best_param = None
-        best_asum = np.Inf
+        #start with low alpha and E_0
+        alphas = np.arange(0.01, 0.75, 0.001)
+        E_0s = np.arange(50.0, 1000.0, 1.0)
 
-        min_T_c = T_e+T_a
-        max_T_c_inc = 5.0
-        T_cs = np.arange(min_T_c, min_T_c+max_T_c_inc, 0.05)
-        t = np.arange(T_e, T_e + T_a + max_T_c_inc, step_size)
-        for T_c in T_cs:
-            eps = self.compute_eps(T_a, T_c, T_e)
-            E2 = (-E_e / (eps*T_a))*(np.exp(-eps*(t-T_e)) - np.exp(-eps*(T_c-T_e)))
+        all_vals = []
+        for alpha in alphas:
+            for E_0 in E_0s:
+                E1 = self.E1(E_0, alpha, wg, t1)
+                E_e_val = float(E1[-1])
+                E1area = E1.sum()*step_size
 
-            #find first zero crossing
-            zc = (E2 >= 0.0).nonzero()[0].min()
-            E2_area = E2[:zc].sum()*step_size
-            asum = np.abs(E1_area + E2_area)
-            if asum < best_asum:
-                best_asum = asum
-                best_param = T_c
+                E2 = self.E2(E_e, T_a, T_e, T_c, eps, t2)
+                E2area = E2.sum()*step_size
 
-        print 'best asum=%f' % best_asum
-        return best_param
+                Ediff = np.abs(E_e + E_e_val) #E_e_val should be negative
+                adiff = np.abs(E1area + E2area)
+                all_vals.append( (alpha, E_0, E1area, E2area, Ediff, adiff) )
+
+        Ediff_tol = 0.1
+        all_vals = np.array(all_vals)
+        ediff_good = (all_vals[:, -2] <= Ediff_tol)
+        good_vals = all_vals[ediff_good, :]
+        best_index = good_vals[:, -1].argmin()
+        print 'best_index=',best_index
+        print '%0.4f, %d, %0.1f, %0.1f, %0.4f, %0.4f' % tuple(good_vals[best_index, :])
+
+        best_alpha = good_vals[best_index, 0]
+        best_E_0 = good_vals[best_index, 1]
+        #compute area difference for best params
+        E1 = self.E1(best_E_0, best_alpha, wg, t1)
+        E1area = E1.sum()*step_size
+        E2 = self.E2(E_e, T_a, T_e, T_c, eps, t2)
+        E2area = E2.sum()*step_size
+
+        #adjust T_a until area difference is minimized
+        adj_sign = 1.0
+        if E2area > E1area:
+            adj_sign = -1.0
+        adj_amount = adj_sign*0.0001
+        adiff_diff = np.Inf
+        adiff_last = np.abs(E1area + E2area)
+        while adiff_diff > 0.0:
+            T_a_new = T_a + adj_amount
+            E2 = self.E2(E_e, T_a_new, T_e, T_c, eps, t2)
+            E2area = E2.sum()*step_size
+            adiff = np.abs(E1area + E2area)
+            #print 'T_a=%0.4f, adiff=%f' % (T_a, adiff)
+            adiff_diff = adiff_last - adiff
+            if adiff_diff > 0.0:
+                T_a = T_a_new
+            adiff_last = adiff
+
+        #adjust T_c until area difference is minimized
+        adj_sign = 1.0
+        if E2area > E1area:
+            adj_sign = -1.0
+        adj_amount = adj_sign*0.0001
+        adiff_diff = np.Inf
+        adiff_last = np.abs(E1area + E2area)
+        while adiff_diff > 0.0:
+            T_c_new = T_c + adj_amount
+            E2 = self.E2(E_e, T_a, T_e, T_c_new, eps, t2)
+            E2area = E2.sum()*step_size
+            adiff = np.abs(E1area + E2area)
+            #print 'T_a=%0.4f, adiff=%f' % (T_a, adiff)
+            adiff_diff = adiff_last - adiff
+            if adiff_diff > 0.0:
+                T_c = T_c_new
+            adiff_last = adiff
+
+        print 'Area Difference: %0.6f' % adiff_last
+        best_params = (best_alpha, best_E_0, T_a, T_c)
+
+        return best_params
+
+
+    def E1(self, E0, alpha, wg, t):
+        return E0*np.exp(alpha*t)*np.sin(wg*t)
+
+    def E2(self, Ee, Ta, Te, Tc, eps, t):
+        return (-Ee / (eps*Ta))*(np.exp(-eps*(t - Te)) - np.exp(-eps*(Tc - Te)))
+
 
 
     def configure_params(self, T_0, E_e, R_g, R_k, R_a):
@@ -118,24 +194,26 @@ class LF(object):
         T_p = T_0 / (2*R_g)
         T_e = T_p*(1.0 + R_k)
         T_a = R_a * T_0
+        T_c = T_0
+        eps = self.compute_eps(T_a, T_c, T_e)
 
         p = dict()
         p['T_0'] = T_0
         p['T_p'] = T_p
         p['T_e'] = T_e
         p['T_a'] = T_a
+        p['T_c'] = T_c
         p['wg']  = np.pi / T_p
         p['E_e'] = E_e
+        p['eps'] = eps
 
         #find alpha, E_0, T_c such that dU(T_e) = E_e
-        alpha,E_0 = self.find_alpha_and_E_0(T_p, T_e, E_e)
+        #alpha,E_0 = self.find_alpha_and_E_0(p)
+        alpha,E_0,T_a,T_c = self.find_alpha_and_E_0_and_T_a(p)
         p['alpha'] = alpha
         p['E_0'] = E_0
-
-        #enforce area balance to find T_c, eps
-        T_c = self.enforce_area_balance(p)
+        p['T_a'] = T_a
         p['T_c'] = T_c
-        p['eps'] = self.compute_eps(T_a, T_c, T_e)
 
         self.params = p
 
@@ -167,10 +245,12 @@ class LF(object):
         #get within-oscillation time
         tn = t % T_0
 
-        if tn >= 0.0 and tn < T_e:
-            E = E_0*np.exp(alpha*tn)*np.sin(wg*tn)
+        if tn >= 0.0 and tn <= T_e:
+            E = self.E1(E_0, alpha, wg, tn)
+        elif tn < T_c:
+            E = self.E2(E_e, T_a, T_e, T_c, eps, tn)
         else:
-            E = (-E_e / (eps*T_a))*(np.exp(-eps*(tn-T_e)) - np.exp(-eps*(T_c-T_e)))
+            E = 0
 
         return E
 
@@ -180,8 +260,17 @@ class LF(object):
         step_size_ms = step_size*1e3
         t_ms = t*1e3
 
+
         dU = self.dU(t_ms)
         Ut = U + step_size_ms*dU
+
+        T_0 = self.params['T_0']
+        T_c = self.params['T_c']
+        tn = t % T_0
+        if tn >= T_c:
+            Ut = 0.0
+            dU = 0.0
+
         self.state[0] = Ut
         self.state[1] = dU
 
