@@ -4,6 +4,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import operator
+from signals import play_signal
 from sound import WavFile, play_sound
 
 class LFWaveform(object):
@@ -230,19 +231,4 @@ def plot_pulse(step_size=0.00005, tlen=0.010, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40,
     plt.axis('tight')
     plt.suptitle(ftitle)
 
-    #write to a wav file
-    wf = WavFile()
-    #wf.data = state[:, 0]
-    wf.data = state[:, 1]
-    wf.sample_rate = int(1.0 / step_size)
-    wf.num_channels = 1
-
-    m = hashlib.md5()
-    m.update(ftitle)
-    m.update('%f' % tlen)
-    fname = '/tmp/%s.wav' % m.hexdigest()
-    if not os.path.exists(fname):
-        wf.to_wav(fname)
-    play_sound(fname)
-
-    return state
+    play_signal(state[:, 1], 1.0 / step_size)
