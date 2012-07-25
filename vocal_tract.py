@@ -1,19 +1,22 @@
 import numpy as np
 from signals import get_random_filter, RANDOM_SEED, play_signal, TwoPoleFilter, AllPoleFilter, CascadeFilter
-from vocal_folds import LFWaveform
+from vocal_folds import LFWaveform, NoiseWaveform
 import matplotlib.pyplot as plt
 
 
-def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40, Ra=0.05, input_order=2, feedback_order=2, rseed=RANDOM_SEED):
+def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40, Ra=0.05, input_order=2, feedback_order=2, rseed=RANDOM_SEED, noise=False):
 
     samp_rate = 44e3
     step_size = 1.0 / samp_rate
 
     #construct glottal source
-    lf = LFWaveform(step_size)
-    lf.configure_params(T0, Ee, Rg, Rk, Ra)
-    print 'lf.params:'
-    print lf.params
+    if noise:
+        lf = NoiseWaveform(samp_rate=samp_rate, max_freq=20e3)
+    else:
+        lf = LFWaveform(step_size)
+        lf.configure_params(T0, Ee, Rg, Rk, Ra)
+        print 'lf.params:'
+        print lf.params
 
     #construct random filter
     f = get_random_filter(input_order, feedback_order, rseed=rseed)
@@ -51,7 +54,10 @@ def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40, Ra=0.05,
         treal = ti*step_size
         s = lf.next()
         ustate.append(s)
-        y = f.filter(s[1])
+        if noise:
+            y = f.filter(s)
+        else:
+            y = f.filter(s[1])
         fstate.append(y)
 
     fstate = np.array(fstate)
