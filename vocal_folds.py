@@ -7,6 +7,24 @@ import operator
 from signals import play_signal
 from sound import WavFile, play_sound
 
+
+class NoiseWaveform(object):
+
+    def __init__(self, samp_rate=44e3, max_freq=20e3):
+
+        self.freqs = np.logspace(2.0, np.log10(max_freq), 50.0)
+        print self.freqs
+        self.coefs = np.random.randn(len(self.freqs))
+        self.t = 0
+        self.step_size = 1.0 / samp_rate
+
+    def next(self):
+        treal = self.t*self.step_size
+        y = np.dot(np.sin(2*np.pi*self.freqs*treal), self.coefs)
+        self.t += 1
+        return y
+
+
 class LFWaveform(object):
 
     def __init__(self, resolution=0.00005):
@@ -232,3 +250,16 @@ def plot_pulse(step_size=0.00005, tlen=0.010, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40,
     plt.suptitle(ftitle)
 
     play_signal(state[:, 1], 1.0 / step_size)
+
+def test_noise(step_size=0.00005, tlen=1.00, max_freq=20e3):
+
+    samp_rate = 1.0 / step_size
+    nf = NoiseWaveform(samp_rate=samp_rate, max_freq=max_freq)
+    t = np.arange(0.0, tlen, step_size)
+    state = []
+    for ti in t:
+        s = nf.next()
+        state.append(s)
+    state = np.array(state)
+    play_signal(state, samp_rate)
+

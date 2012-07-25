@@ -1,7 +1,11 @@
 import hashlib
 import os
+from scipy.signal.filter_design import freqz, zpk2tf
 import numpy as np
 import matplotlib.pyplot as plt
+
+from scipy.signal import iirdesign
+
 from sound import WavFile, play_sound
 
 RANDOM_SEED = 128532852
@@ -29,7 +33,7 @@ class LinearFilter(object):
             y_feedback = np.dot(self.feedback_state, self.feedback_weights)
 
         #compute output
-        y = y_input + y_feedback
+        y = np.real(y_input + y_feedback)
 
         """
         print 'input_state=',self.input_state
@@ -47,6 +51,57 @@ class LinearFilter(object):
             self.feedback_state[-1] = y
 
         return y
+
+
+class BesselFilter(LinearFilter):
+    """ http://unicorn.us.com/alex/2polefilters.html """
+
+    def __init__(self, fstar, highpass=False, num_pass=1):
+        """ fstar is cutoff frequency divided by sampling rate """
+
+        n = num_pass
+        c = (((2**(1.0 / n) - 0.75)**0.5 - 0.5)**-0.5) / np.sqrt(3)
+        g = 3
+        p = 3
+        w0 = np.tan(np.pi*c*fstar)
+        K1 = p*w0
+        K2 = g*(w0**2)
+        A0 = K2 / (1 + K1 + K2)
+        A1 = 2*A0 * (highpass*-1.0)
+        A2 = A0
+        B1 = 2*A0*((1.0/K2)-1.0) * (highpass*-1.0)
+        B2 = 1.0 - (A0 + A1 + A2 + B1)
+        print 'w0=%0.6f' % w0
+        print 'K1=%0.6f, K2=%0.6f' % (K1, K2)
+        print 'A0=%0.6f, A1=%0.6f, A2=%0.6f' % (A0, A1, A2)
+        print 'B1=%0.6f, B2=%0.6f' % (B1, B2)
+
+        input_weights = np.array([A2, A1, A0])
+        feedback_weights = np.array([B2, B1])
+
+        LinearFilter.__init__(self, input_weights=input_weights, feedback_weights=feedback_weights)
+
+
+class ScipyIIRFilter(LinearFilter):
+
+    def __init__(self, wp, ws, gpass, gstop):
+
+        b,a = iirdesign(wp, ws, gpass, gstop)
+        print b,a
+        input_weights = b[::-1]
+        feedback_weights = a[::-1]
+        LinearFilter.__init__(self, input_weights=input_weights, feedback_weights=feedback_weights)
+
+
+class AllPoleFilter(LinearFilter):
+    """ Simulates an all-pole filter with conjugate pairs of poles. """
+
+    def __init__(self,  poles=np.array([]), gain=1.0):
+        b,a = zpk2tf([], poles, gain)
+        print 'b=',b
+        print 'a=',a
+        LinearFilter.__init__(self, input_weights=b[::-1], feedback_weights=a[::-1])
+
 
 
 class OneZeroFilter(LinearFilter):
@@ -148,6 +203,17 @@ def compute_transfer_function(filter, sample_rate, burn_in_time=0.025, simlen=1.
     plt.title('Transfer Function Phase')
     plt.axis('tight')
 
+    #use scipy to plot frequency response
+    w,h = freqz(filter.input_weights, filter.feedback_weights)
+    plt.figure()
+    plt.subplot(2, 1, 1)
+    plt.plot(w, np.abs(h), 'k-')
+    plt.axis('tight')
+    plt.title('Amplitude Response (scipy)')
+    plt.subplot(2, 1, 2)
+    plt.plot(w, np.unwrap(np.angle(h)), 'g-')
+    plt.axis('tight')
+    plt.title('Phase Response (scipy)')
 
     """
     xft = np.fft.fft(x)
@@ -167,7 +233,7 @@ def compute_transfer_function(filter, sample_rate, burn_in_time=0.025, simlen=1.
     plt.title('Input/Output Power Spectrums')
     """
 
-def get_random_filter(input_order, feedback_order, rseed=RANDOM_SEED):
+def get_random_filter(input_order, feedback_order, rseed=RANDOM_SEED, stable=True):
 
     np.random.seed(rseed)
     input_weights = np.random.randn(input_order)
@@ -179,6 +245,8 @@ def get_random_filter(input_order, feedback_order, rseed=RANDOM_SEED):
     if feedback_order > 0:
         feedback_weights /= np.abs(feedback_weights).max()
         feedback_weights *= 0.99 #prevent blowing up by keeping weights below 1.0
+        if stable:
+            feedback_weights *= 1e-1
 
     f = LinearFilter(input_weights=input_weights, feedback_weights=feedback_weights)
 
@@ -200,8 +268,34 @@ def test_onepole(b0=1.0, a1=0.5, simlen=0.050):
     compute_transfer_function(f, sample_rate, simlen=simlen)
 
 def test_twopole(b0=1.0, a1=0.5, a2=0.5, simlen=0.050):
+
+    ahat = a1 / 2.0
+    pole1 = -ahat + np.sqrt(complex(ahat**2 - a2, 0.0))
+    pole2 = -ahat - np.sqrt(complex(ahat**2 - a2, 0.0))
+    print 'Pole 1:', pole1
+    print 'abs=%0.4f, angle=%0.4f, Fn=%0.4f' % (np.abs(pole1), np.angle(pole1), np.abs(np.imag(pole1)) / 2*np.pi)
+    print 'Pole 2:', pole2
+    print 'abs=%0.4f, angle=%0.4f, Fn=%0.4f' % (np.abs(pole2), np.angle(pole2), np.abs(np.imag(pole2)) / 2*np.pi)
+
     f = TwoPoleFilter(b0, a1, a2)
     sample_rate = 44e3
+    compute_transfer_function(f, sample_rate, simlen=simlen)
+
+def test_allpole(poles=np.array([complex(0.01, 2*np.pi*500.0)]), simlen=0.050):
+    apf = AllPoleFilter(poles=poles)
+    sample_rate = 44e3
+    compute_transfer_function(apf, sample_rate, simlen=simlen)
+
+
+def test_bessel(fc=500.0, highpass=False, n=1, simlen=0.050):
+
+    sample_rate = 44e3
+    fstar = fc / sample_rate
+    bf = BesselFilter(fstar=fstar, highpass=highpass, num_pass=n)
+    compute_transfer_function(bf, sample_rate, simlen=simlen)
+
+def test_scipyfilter(wp=0.2, ws=0.3, gpass=10.0, gstop=10.0, sample_rate=44e3, simlen=0.050):
+    f = ScipyIIRFilter(wp=wp, ws=ws, gpass=gpass, gstop=gstop)
     compute_transfer_function(f, sample_rate, simlen=simlen)
 
 
@@ -216,6 +310,19 @@ def test_cascade(b0=[1.0, 1.0], b1=[0.6, -0.6], simlen=0.050):
 
     sample_rate = 44e3
     compute_transfer_function(cf, sample_rate, simlen=simlen)
+
+def test_cascade2(simlen=0.050):
+
+    f1 = ScipyIIRFilter(wp=[0.2,0.5], ws=[0.1, 0.6], gpass=10.0, gstop=20.0)
+    f2 = ScipyIIRFilter(wp=[0.2,0.5], ws=[0.1, 0.6], gpass=10.0, gstop=20)
+
+    cf = CascadeFilter()
+    cf.add_filter(f1)
+    cf.add_filter(f2)
+
+    sample_rate = 44e3
+    compute_transfer_function(cf, sample_rate, simlen=simlen)
+
 
 def test_random(input_order=5, feedback_order=5, rseed=RANDOM_SEED, simlen=0.050):
     f = get_random_filter(input_order, feedback_order, rseed=rseed)
