@@ -96,11 +96,25 @@ class ScipyIIRFilter(LinearFilter):
 class AllPoleFilter(LinearFilter):
     """ Simulates an all-pole filter with conjugate pairs of poles. """
 
-    def __init__(self,  poles=np.array([]), gain=1.0):
+    def __init__(self, sample_rate=44e3, freqs=np.array([]), gain=1.0, magnitude=0.9):
+
+        fn = sample_rate / 2.0
+        #compute poles
+        r = magnitude
+        poles = []
+        for f in freqs:
+            ang = (f / fn)*np.pi
+            p = complex(r*np.cos(ang), r*np.sin(ang))
+            pstar = np.conjugate(p)
+            poles.append(p)
+            poles.append(pstar)
+
         b,a = zpk2tf([], poles, gain)
+        b = b[::-1]
+        a = -1.0*a[::-1][:-1]
         print 'b=',b
         print 'a=',a
-        LinearFilter.__init__(self, input_weights=b[::-1], feedback_weights=a[::-1])
+        LinearFilter.__init__(self, input_weights=b, feedback_weights=a)
 
 
 
@@ -193,7 +207,8 @@ def compute_transfer_function(filter, sample_rate, burn_in_time=0.025, simlen=1.
 
     plt.subplot(3, 1, 2)
     hft_mag = np.abs(hft)
-    plt.plot(hft_freq, hft_mag, 'r-')
+    hft_mag_db = 20*np.log10(hft_mag)
+    plt.plot(hft_freq, hft_mag_db, 'r-')
     plt.title('Transfer Function Amplitude')
     plt.axis('tight')
 
@@ -204,6 +219,7 @@ def compute_transfer_function(filter, sample_rate, burn_in_time=0.025, simlen=1.
     plt.axis('tight')
 
     #use scipy to plot frequency response
+    """
     w,h = freqz(filter.input_weights, filter.feedback_weights)
     plt.figure()
     plt.subplot(2, 1, 1)
@@ -214,6 +230,7 @@ def compute_transfer_function(filter, sample_rate, burn_in_time=0.025, simlen=1.
     plt.plot(w, np.unwrap(np.angle(h)), 'g-')
     plt.axis('tight')
     plt.title('Phase Response (scipy)')
+    """
 
     """
     xft = np.fft.fft(x)
@@ -281,9 +298,10 @@ def test_twopole(b0=1.0, a1=0.5, a2=0.5, simlen=0.050):
     sample_rate = 44e3
     compute_transfer_function(f, sample_rate, simlen=simlen)
 
-def test_allpole(poles=np.array([complex(0.01, 2*np.pi*500.0)]), simlen=0.050):
-    apf = AllPoleFilter(poles=poles)
+def test_allpole(freqs=[500.0], gain=1.0, simlen=0.050):
+
     sample_rate = 44e3
+    apf = AllPoleFilter(sample_rate=sample_rate, freqs=freqs, gain=gain)
     compute_transfer_function(apf, sample_rate, simlen=simlen)
 
 

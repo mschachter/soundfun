@@ -1,10 +1,10 @@
 import numpy as np
-from signals import get_random_filter, RANDOM_SEED, play_signal, TwoPoleFilter, AllPoleFilter, CascadeFilter
+from signals import get_random_filter, RANDOM_SEED, play_signal, TwoPoleFilter, AllPoleFilter, CascadeFilter, OneZeroFilter
 from vocal_folds import LFWaveform, NoiseWaveform
 import matplotlib.pyplot as plt
 
 
-def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40, Ra=0.05, input_order=2, feedback_order=2, rseed=RANDOM_SEED, noise=False):
+def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=2100.0, Rg=0.95, Rk=0.40, Ra=0.02, noise=False):
 
     samp_rate = 44e3
     step_size = 1.0 / samp_rate
@@ -18,37 +18,22 @@ def simulate_vocal_tract(simlen=5.0, T0=9.0, Ee=750.0, Rg=1.0, Rk=0.40, Ra=0.05,
         print 'lf.params:'
         print lf.params
 
-    #construct random filter
-    f = get_random_filter(input_order, feedback_order, rseed=rseed)
-    print 'Input Weights:',f.input_weights
-    print 'Feedback Weights:',f.feedback_weights
 
-    """
-    f1 = TwoPoleFilter(1.0, 0.3, -0.9)
-    f2 = TwoPoleFilter(1.0, 0.1, -0.6)
+    #f = AllPoleFilter(sample_rate=samp_rate, freqs=[500.0, 1000.0, 1500.0, 2000.0], gain=0.99)
+    freqs=[500.0, 1000.0, 1500.0, 2000.0]
+    gains=[1.0, 0.85, 0.75, 0.60]
     f = CascadeFilter()
-    f.add_filter(f1)
-    f.add_filter(f2)
-    """
+    for freq,gain in zip(freqs,gains):
+        apf = AllPoleFilter(sample_rate=samp_rate, freqs=[freq], gain=gain, magnitude=0.99)
+        f.add_filter(apf)
 
-    """
-    formants = np.array([500.0, 1000.0]) / samp_rate
-    poles_pos = [complex(-1e-6, 2*np.pi*f) for f in formants]
-    poles_neg = [complex(-1e-6, -2*np.pi*f) for f in formants]
-    poles = []
-    poles.extend(poles_pos)
-    poles.extend(poles_neg)
-    f = AllPoleFilter(poles=poles)
-    """
+    #add radiant characteristic filter
+    rf = OneZeroFilter(b0=1.0, b1=-0.95)
+    f.add_filter(rf)
 
     t = np.arange(0.0, simlen, step_size)
     ustate = []
     fstate = []
-
-    fb_tconst = 10.0
-    input_tconst = 1.5
-    fb_weight_func = lambda t: t
-    input_weight_func = lambda t: np.exp(-t / input_tconst)
 
     for ti in t:
         treal = ti*step_size
